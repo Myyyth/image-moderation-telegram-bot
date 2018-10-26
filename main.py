@@ -1,12 +1,34 @@
-import time
 import boto3
-from telegram import TelegramBot
+import logging
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
-token = '726253065:AAFg-4Qs6JwT_B95peBC4t5iRX4UNeugOrc'
-bot = TelegramBot(token)
+
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+EXPLICIT_MIN_CONFIDENCE = 0.5
+TELEGRAM_TOKEN = '726253065:AAFg-4Qs6JwT_B95peBC4t5iRX4UNeugOrc'
+REQUEST_KWARGS = {
+    'proxy_url': 'http://159.65.130.145:80/'
+}
 rekognition = boto3.client('rekognition',
                            aws_access_key_id='AKIAI6EQBKCSDCWR66QQ',
                            aws_secret_access_key='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')
+updater = Updater(token=TELEGRAM_TOKEN, request_kwargs=REQUEST_KWARGS)
+dispatcher = updater.dispatcher
+
+
+def start(bot, update):
+    bot.send_message(chat_id=update.message.chat_id, text='Send me some NSFW image')
+
+
+def check_photo(bot, update):
+    file_id = update.message.photo[-1].file_id
+    file = bot.getFile(file_id).download_as_bytearray()
+    is_explicit = detect_explicit_content(file)
+    if is_explicit:
+        bot.send_message(chat_id=update.message.chat_id, text='HOLY SHEAT THAT SOME NSFW IMAGE!')
+    else:
+        bot.send_message(chat_id=update.message.chat_id, text='All is fine :)')
 
 
 def detect_explicit_content(image_bytes):
@@ -24,6 +46,7 @@ def detect_explicit_content(image_bytes):
             Image={
                 'Bytes': image_bytes,
             },
+            MinConfidence=EXPLICIT_MIN_CONFIDENCE
         )
     except Exception as e:
         raise e
@@ -33,41 +56,6 @@ def detect_explicit_content(image_bytes):
     return True
 
 
-def respond_message(result):
-    global bot
-    if 'text' in result['message']:
-        print('Found some text, responding')
-        if result['message']['text'] == '/start':
-            return 'Send me some NSFW image'
-    elif 'photo' in result['message']:
-        print('Found some photo, responding')
-        biggest_file_id = result['message']['photo'][len(result['message']['photo'])-1]['file_id']
-        file = bot.get_file(biggest_file_id)
-        if file['ok']:
-            file = bot.download_file(file['result']['file_path'])
-            is_explicit = detect_explicit_content(file)
-            if is_explicit:
-                return 'HOLY SHEAT THIS IS SOME FREAKIN NSFW PICTURE'
-            else:
-                return 'Good pic!'
-    return 'I don\'t know what you mean'
-
-
-# Remove or change proxy (depends on your connection)
-bot.set_proxy('159.65.130.145', '80')
-while True:
-    try:
-        time.sleep(1)
-        print('Trying to fetch some new messages')
-        response = bot.get_updates(use_offset=True)
-        if response['ok']:
-            if response['result']:
-                print('Found new messages! Processing...')
-                for result in response['result']:
-                    bot.send_message(result['message']['chat']['id'], respond_message(result))
-            else:
-                print('No new messages')
-    except Exception as e:
-        print("===START_ERROR===")
-        print(e)
-        print("===END_ERROR===")
+dispatcher.add_handler(CommandHandler('start', start))
+dispatcher.add_handler(MessageHandler(Filters.photo, check_photo))
+updater.start_polling()
