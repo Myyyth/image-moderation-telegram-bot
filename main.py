@@ -21,6 +21,11 @@ def start(bot, update):
     bot.send_message(chat_id=update.message.chat_id, text='Send me some NSFW image')
 
 
+def set_confidence(bot, update):
+    # TODO: Update local var
+    bot.send_message(chat_id=update.message.chat_id, text='Confidence level updated')
+
+
 def check_photo(bot, update):
     file_id = update.message.photo[-1].file_id
     file = bot.getFile(file_id).download_as_bytearray()
@@ -57,5 +62,6 @@ def detect_explicit_content(image_bytes):
 
 
 dispatcher.add_handler(CommandHandler('start', start))
+dispatcher.add_handler(CommandHandler('setconfidence', set_confidence))
 dispatcher.add_handler(MessageHandler(Filters.photo, check_photo))
 updater.start_polling()
