@@ -410,6 +410,7 @@ def detect_explicit_content(chat_id, image_bytes):
     cursor = conn.cursor()
     cursor.execute('SELECT confidence_level FROM aws_image_settings WHERE chat_id = ?', (chat_id,))
     confidence_level = cursor.fetchone()[0]
+    conn.close()
     try:
         response = rekognition.detect_moderation_labels(
             Image={
