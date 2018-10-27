@@ -4,3 +4,5 @@
 __pycache__/
 # Ignore venv
 venv/
+# Ignore bot settings
+/bot_settings.ini
