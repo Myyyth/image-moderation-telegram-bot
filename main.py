@@ -2,10 +2,13 @@ import boto3
 import logging
 import sqlite3
 import configparser
+
+import numpy
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import telegram
-from PIL import Image
+from PIL import Image, ImageFilter, ImageDraw
 from io import BytesIO
+import os
 
 bot_settings = configparser.ConfigParser()
 bot_settings.read('bot_settings.ini')
@@ -23,6 +26,19 @@ rekognition = boto3.client('rekognition',
 updater = Updater(token=TELEGRAM_TOKEN, request_kwargs=REQUEST_KWARGS)
 dispatcher = updater.dispatcher
 
+categories = ["Nudity", "Graphic Male Nudity", "Graphic Female Nudity", "Sexual Activity", "Partial Nudity",
+              "Female Swimwear Or Underwear", "Male Swimwear Or Underwear", "Revealing Clothes"]
+
+conn = sqlite3.connect('user_settings.db')
+cursor = conn.cursor()
+cursor.execute('SELECT words FROM bad_words')
+bad_words_from_db = cursor.fetchall()
+conn.commit()
+conn.close()
+
+bad_words = []
+for i in bad_words_from_db:
+    bad_words.append(i[0])
 
 def init_new(chat_id):
     conn = sqlite3.connect('user_settings.db')
@@ -383,6 +399,25 @@ def allow_revealing_clothes(bot, update, args):
     bot.send_message(chat_id=update.message.chat_id, text='Revealing clothes updated')
 
 
+def blur(file, x1=0, y1=0, x2=1, y2=1):
+
+
+    image = Image.open(BytesIO(file))
+    positions = (int(image.width * x1), int(image.height * y1), int(image.width * x2), int(image.height * y2))
+
+    # blur parts of the image
+    image_crop_part = image.crop(positions)
+    for i in range(15):  # You can blur many times
+        image_crop_part = image_crop_part.filter(ImageFilter.BLUR)
+    image.paste(image_crop_part, positions)
+
+    with BytesIO() as output:
+        image.save(output, 'PNG')
+        file = output.getvalue()
+
+    return file
+
+
 def check_sticker(bot, update):
     bot.send_message(chat_id=update.message.chat_id, text='Processing your sticker...')
     if (update.message.sticker.set_name == 'Methodisty'):
@@ -396,20 +431,45 @@ def check_sticker(bot, update):
         image.save(output, 'PNG')
         file = output.getvalue()
 
-    is_explicit = detect_explicit_content(update.message.chat_id, file)
+    explicit_content, file = detect_explicit_content(update.message.chat_id, file)
+    explicit_text, file = detect_explicit_text(file)
+    is_explicit = explicit_content or explicit_text
     if is_explicit:
-        bot.send_message(chat_id=update.message.chat_id, text='HOLY SHEAT THAT SOME NSFW IMAGE!')
+        image = Image.open(BytesIO(file))
+        image.save("image.png")
+        bot.send_sticker(chat_id=update.message.chat_id, sticker=open('image.png', 'rb'))
+        bot.send_message(chat_id=update.message.chat_id, text="@" + update.message.from_user['username'])
+        bot.send_message(chat_id=update.message.chat_id, text='HOLY SHEAT THAT SOME NSFW STICKER!')
+        bot.delete_message(update.message.chat.id, update.message.message_id)
     else:
         bot.send_message(chat_id=update.message.chat_id, text='All is fine :)')
 
 
 def check_photo(bot, update):
+
     bot.send_message(chat_id=update.message.chat_id, text='Processing your image...')
     file_id = update.message.photo[-1].file_id
     file = bot.getFile(file_id).download_as_bytearray()
-    is_explicit = detect_explicit_content(update.message.chat_id, file)
+
+
+
+    explicit_content, file = detect_explicit_content(update.message.chat_id, file)
+    explicit_text, file = detect_explicit_text(file)
+
+    is_explicit = explicit_content or explicit_text
+
+
     if is_explicit:
+        image = Image.open(BytesIO(file))
+        image.save("image.png")
+        if update.message.caption == None:
+            text = ""
+        else:
+            text = update.message.caption
+        bot.send_photo(chat_id=update.message.chat_id, photo=open('image.png', 'rb'),
+                       caption=text + "\n@" + update.message.from_user['username'])
         bot.send_message(chat_id=update.message.chat_id, text='HOLY SHEAT THAT SOME NSFW IMAGE!')
+        bot.delete_message(update.message.chat.id, update.message.message_id)
     else:
         bot.send_message(chat_id=update.message.chat_id, text='All is fine :)')
 
@@ -428,6 +488,18 @@ def detect_explicit_content(chat_id, image_bytes):
     cursor = conn.cursor()
     cursor.execute('SELECT confidence_level FROM aws_image_settings WHERE chat_id = ?', (chat_id,))
     confidence_level = cursor.fetchone()[0]
+
+    cursor.execute('SELECT allow_nudity, allow_male_nudity, '
+                   'allow_female_nudity, allow_sexual_activity, allow_partial_activity, '
+                   'allow_female_suit, allow_male_suit, allow_revealing_clothes FROM aws_image_settings '
+                   'WHERE chat_id = ?', (chat_id,))
+    allow_values = cursor.fetchone()
+
+    allows = {}
+    for i in range(len(allow_values)):
+        allows[categories[i]] = allow_values[i]
+
+    conn.close()
     try:
         response = rekognition.detect_moderation_labels(
             Image={
@@ -438,9 +510,47 @@ def detect_explicit_content(chat_id, image_bytes):
     except Exception as e:
         raise e
     labels = response['ModerationLabels']
-    if not labels:
-        return False
-    return True
+
+    for label in labels:
+        name = label['Name']
+        if name == 'Suggestive' or name == 'Explicit Nudity':
+            continue
+        if allows[name] == 0:
+            image_bytes = blur(image_bytes)
+            return True, image_bytes
+
+    return False, image_bytes
+
+
+def detect_explicit_text(image_bytes):
+    """ Checks image for explicit or suggestive content using Amazon Rekognition Image Moderation.
+    Args:
+        image_bytes (bytes): Blob of image bytes.
+    Returns:
+        (boolean)
+        True if Image Moderation detects explicit or suggestive content in blob of image bytes.
+        False otherwise.
+    """
+    try:
+        response = rekognition.detect_text(
+            Image={
+                'Bytes': image_bytes,
+            }
+        )
+    except Exception as e:
+        raise e
+    text_detections = response['TextDetections']
+    helper = 0
+    for text in text_detections:
+        if text['DetectedText'].lower() in bad_words:
+            geom = text['Geometry']
+            bb = geom['BoundingBox']
+            image_bytes = blur(image_bytes, bb['Left'], bb['Top'], bb['Left']+bb['Width'], bb['Top']+bb['Height'])
+            helper = 1
+    if helper == 1:
+        return True, image_bytes
+    return False, image_bytes
+    #, image_bytes
 
 
 dispatcher.add_handler(CommandHandler('start', start))
