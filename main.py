@@ -459,10 +459,6 @@ def blur(file, x1=0, y1=0, x2=1, y2=1):
 
 
 def check_sticker(bot, update):
-    bot.send_message(chat_id=update.message.chat_id, text='Processing your sticker...')
-    if (update.message.sticker.set_name == 'Methodisty'):
-        bot.send_message(chat_id=update.message.chat_id, text='Pidor')
-        return 0
     file_id = update.message.sticker.file_id
     file = bot.getFile(file_id).download_as_bytearray()
     image = Image.open(BytesIO(file))
@@ -486,8 +482,6 @@ def check_sticker(bot, update):
 
 
 def check_photo(bot, update):
-
-    bot.send_message(chat_id=update.message.chat_id, text='Processing your image...')
     file_id = update.message.photo[-1].file_id
     file = bot.getFile(file_id).download_as_bytearray()
 
