@@ -13,7 +13,7 @@ import os
 bot_settings = configparser.ConfigParser()
 bot_settings.read('bot_settings.ini')
 
-logging.basicConfig(filename='log.txt', level=logging.DEBUG,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 TELEGRAM_TOKEN = str(bot_settings['telegram']['BotApiToken'])
@@ -48,9 +48,10 @@ def init_new(chat_id):
     if exists:
         cursor.execute('UPDATE aws_image_settings SET confidence_level = 50, allow_nudity = 0, allow_male_nudity = 0, '
                        'allow_female_nudity = 0, allow_sexual_activity = 0, allow_partial_activity = 0, '
-                       'allow_female_suit = 0, allow_male_suit = 0, allow_revealing_clothes = 0')
+                       'allow_female_suit = 0, allow_male_suit = 0, allow_revealing_clothes = 0, nsfw_image_action = "skip"'
+                       'WHERE chat_id = ?', (chat_id,))
     else:
-        cursor.execute('INSERT INTO aws_image_settings VALUES (?, 50, 0, 0, 0, 0, 0, 0, 0, 0)', (chat_id,))
+        cursor.execute('INSERT INTO aws_image_settings VALUES (?, 50, 0, 0, 0, 0, 0, 0, 0, 0, "skip")', (chat_id,))
     conn.commit()
 
 
@@ -183,6 +184,15 @@ def update_revealing_clothes(chat_id, revealing_clothes):
     conn.close()
 
 
+def update_nsfw_image_action(chat_id, action):
+    conn = sqlite3.connect('user_settings.db')
+    cursor = conn.cursor()
+    cursor.execute('UPDATE aws_image_settings SET nsfw_image_action = ? WHERE chat_id = ?',
+                   (action, chat_id))
+    conn.commit()
+    conn.close()
+
+
 def user_settings_to_telegram_text(settings):
     rez = ''
     for k, v in settings.items():
@@ -247,7 +257,9 @@ def help(bot, update):
                                                           ' /allowpartialactivity [value] - True for allowing partialactivity, False otherwise\n'
                                                           ' /allowfemalesuit [value] - True for allowing female swimsuits, False otherwise\n'
                                                           ' /allowmalesuit [value] - True for allowing male suits, False otherwise\n'
-                                                          ' /allowrevealingclothes [value] - True for allowing revealing clothes, False otherwise\n', parse_mode=telegram.ParseMode.MARKDOWN)
+                                                          ' /allowrevealingclothes [value] - True for allowing revealing clothes, False otherwise\n'
+                                                          ' /setimageaction value - Possible values: skip, blur, delete',
+                     parse_mode=telegram.ParseMode.MARKDOWN)
 
 
 def settings(bot, update):
@@ -439,6 +451,26 @@ def allow_revealing_clothes(bot, update, args):
     bot.send_message(chat_id=update.message.chat_id, text='Revealing clothes updated')
 
 
+def set_image_action(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
+    if len(args) == 0:
+        bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
+                                                              'again')
+        return
+    if len(args) > 1:
+        bot.send_message(chat_id=update.message.chat_id, text='You have provided too much arguments (>1)')
+        return
+    if args[0] not in ['blur', 'delete', 'skip']:
+        bot.send_message(chat_id=update.message.chat_id, text='Unknown parameter value, refer to /help and try '
+                                                              'again')
+        return
+    update_nsfw_image_action(update.message.chat_id, args[0])
+    bot.send_message(chat_id=update.message.chat_id, text='Action for nsfw images updated')
+
+
 def blur(file, x1=0, y1=0, x2=1, y2=1):
 
 
@@ -597,6 +629,7 @@ dispatcher.add_handler(CommandHandler('allowpartialactivity', allow_partial_acti
 dispatcher.add_handler(CommandHandler('allowfemalesuit', allow_female_suit, pass_args=True))
 dispatcher.add_handler(CommandHandler('allowmalesuit', allow_male_suit, pass_args=True))
 dispatcher.add_handler(CommandHandler('allowrevealingclothes', allow_revealing_clothes, pass_args=True))
+dispatcher.add_handler(CommandHandler('setimageaction', set_image_action, pass_args=True))
 dispatcher.add_handler(CommandHandler('help', help))
 dispatcher.add_handler(CommandHandler('settings', settings))
 dispatcher.add_handler(MessageHandler(Filters.photo, check_photo))
