@@ -54,6 +54,14 @@ def init_new(chat_id):
     conn.commit()
 
 
+def is_admin(bot, chat_id, user_id):
+    admins = bot.get_chat_administrators(chat_id)
+    for admin in admins:
+        if admin.user.id == user_id:
+            return True
+    return False
+
+
 def update_confidence_level(chat_id, confidence_level):
     conn = sqlite3.connect('user_settings.db')
     cursor = conn.cursor()
@@ -242,10 +250,6 @@ def help(bot, update):
                                                           ' /allowrevealingclothes [value] - True for allowing revealing clothes, False otherwise\n', parse_mode=telegram.ParseMode.MARKDOWN)
 
 
-def pidor(bot, update):
-    bot.send_message(chat_id=update.message.chat_id, text='@Stepan_Ustinov')
-
-
 def settings(bot, update):
     bot.send_message(chat_id=update.message.chat_id, text=user_settings_to_telegram_text(
         get_user_settings(update.message.chat_id)) + '\nFor customizing settings, refer to /help',
@@ -253,6 +257,10 @@ def settings(bot, update):
 
 
 def set_confidence(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -272,6 +280,10 @@ def set_confidence(bot, update, args):
 
 
 def allow_nudity(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -288,6 +300,10 @@ def allow_nudity(bot, update, args):
 
 
 def allow_female_nudity(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -304,6 +320,10 @@ def allow_female_nudity(bot, update, args):
 
 
 def allow_male_nudity(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -320,6 +340,10 @@ def allow_male_nudity(bot, update, args):
 
 
 def allow_sexual_activity(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -336,6 +360,10 @@ def allow_sexual_activity(bot, update, args):
 
 
 def allow_partial_activity(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -352,6 +380,10 @@ def allow_partial_activity(bot, update, args):
 
 
 def allow_female_suit(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -368,6 +400,10 @@ def allow_female_suit(bot, update, args):
 
 
 def allow_male_suit(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -384,6 +420,10 @@ def allow_male_suit(bot, update, args):
 
 
 def allow_revealing_clothes(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -564,7 +604,6 @@ dispatcher.add_handler(CommandHandler('allowfemalesuit', allow_female_suit, pass
 dispatcher.add_handler(CommandHandler('allowmalesuit', allow_male_suit, pass_args=True))
 dispatcher.add_handler(CommandHandler('allowrevealingclothes', allow_revealing_clothes, pass_args=True))
 dispatcher.add_handler(CommandHandler('help', help))
-dispatcher.add_handler(CommandHandler('pidor', pidor))
 dispatcher.add_handler(CommandHandler('settings', settings))
 dispatcher.add_handler(MessageHandler(Filters.photo, check_photo))
 dispatcher.add_handler(MessageHandler(Filters.sticker, check_sticker))
