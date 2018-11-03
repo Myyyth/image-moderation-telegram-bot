@@ -13,7 +13,7 @@ import os
 bot_settings = configparser.ConfigParser()
 bot_settings.read('bot_settings.ini')
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(filename='log.txt', level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 TELEGRAM_TOKEN = str(bot_settings['telegram']['BotApiToken'])
