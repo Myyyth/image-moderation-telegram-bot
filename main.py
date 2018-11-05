@@ -3,12 +3,10 @@ import logging
 import sqlite3
 import configparser
 
-import numpy
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import telegram
-from PIL import Image, ImageFilter, ImageDraw
+from PIL import Image, ImageFilter
 from io import BytesIO
-import os
 
 bot_settings = configparser.ConfigParser()
 bot_settings.read('bot_settings.ini')
@@ -17,15 +15,18 @@ logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 TELEGRAM_TOKEN = str(bot_settings['telegram']['BotApiToken'])
-REQUEST_KWARGS = {
-    'proxy_url': 'http://{0}/'.format(str(bot_settings['telegram']['Proxy']))
-}
+
+if 'Proxy' in bot_settings['telegram']:
+    REQUEST_KWARGS = {
+        'proxy_url': 'http://{0}/'.format(str(bot_settings['telegram']['Proxy']))
+    }
+    updater = Updater(token=TELEGRAM_TOKEN, request_kwargs=REQUEST_KWARGS)
+else:
+    updater = Updater(token=TELEGRAM_TOKEN)
 rekognition = boto3.client('rekognition',
                            aws_access_key_id=str(bot_settings['amazon']['AccessKey']),
                            aws_secret_access_key=str(bot_settings['amazon']['SecretAccessKey']))
-updater = Updater(token=TELEGRAM_TOKEN, request_kwargs=REQUEST_KWARGS)
 dispatcher = updater.dispatcher
-
 categories = ["Nudity", "Graphic Male Nudity", "Graphic Female Nudity", "Sexual Activity", "Partial Nudity",
               "Female Swimwear Or Underwear", "Male Swimwear Or Underwear", "Revealing Clothes"]
 
@@ -216,6 +217,7 @@ def get_user_settings(chat_id):
     settings['Allow female suit'] = bool(rez[7])
     settings['Allow male suit'] = bool(rez[8])
     settings['Allow revealing clothes'] = bool(rez[9])
+    settings['Action for NSFW content'] = rez[10]
     return settings
 
 
@@ -634,4 +636,4 @@ dispatcher.add_handler(CommandHandler('help', help))
 dispatcher.add_handler(CommandHandler('settings', settings))
 dispatcher.add_handler(MessageHandler(Filters.photo, check_photo))
 dispatcher.add_handler(MessageHandler(Filters.sticker, check_sticker))
-updater.start_polling()
+updater.start_polling(timeout=30)
