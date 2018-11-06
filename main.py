@@ -627,7 +627,6 @@ def detect_explicit_text(image_bytes):
     if helper == 1:
         return True, image_bytes
     return False, image_bytes
-    #, image_bytes
 
 
 dispatcher.add_handler(CommandHandler('start', start))
