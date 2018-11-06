@@ -3,12 +3,10 @@ import logging
 import sqlite3
 import configparser
 
-import numpy
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import telegram
-from PIL import Image, ImageFilter, ImageDraw
+from PIL import Image, ImageFilter
 from io import BytesIO
-import os
 
 bot_settings = configparser.ConfigParser()
 bot_settings.read('bot_settings.ini')
@@ -17,15 +15,18 @@ logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 TELEGRAM_TOKEN = str(bot_settings['telegram']['BotApiToken'])
-REQUEST_KWARGS = {
-    'proxy_url': 'http://{0}/'.format(str(bot_settings['telegram']['Proxy']))
-}
+
+if 'Proxy' in bot_settings['telegram']:
+    REQUEST_KWARGS = {
+        'proxy_url': 'http://{0}/'.format(str(bot_settings['telegram']['Proxy']))
+    }
+    updater = Updater(token=TELEGRAM_TOKEN, request_kwargs=REQUEST_KWARGS)
+else:
+    updater = Updater(token=TELEGRAM_TOKEN)
 rekognition = boto3.client('rekognition',
                            aws_access_key_id=str(bot_settings['amazon']['AccessKey']),
                            aws_secret_access_key=str(bot_settings['amazon']['SecretAccessKey']))
-updater = Updater(token=TELEGRAM_TOKEN, request_kwargs=REQUEST_KWARGS)
 dispatcher = updater.dispatcher
-
 categories = ["Nudity", "Graphic Male Nudity", "Graphic Female Nudity", "Sexual Activity", "Partial Nudity",
               "Female Swimwear Or Underwear", "Male Swimwear Or Underwear", "Revealing Clothes"]
 
@@ -48,10 +49,19 @@ def init_new(chat_id):
     if exists:
         cursor.execute('UPDATE aws_image_settings SET confidence_level = 50, allow_nudity = 0, allow_male_nudity = 0, '
                        'allow_female_nudity = 0, allow_sexual_activity = 0, allow_partial_activity = 0, '
-                       'allow_female_suit = 0, allow_male_suit = 0, allow_revealing_clothes = 0')
+                       'allow_female_suit = 0, allow_male_suit = 0, allow_revealing_clothes = 0, nsfw_image_action = "blur"'
+                       'WHERE chat_id = ?', (chat_id,))
     else:
-        cursor.execute('INSERT INTO aws_image_settings VALUES (?, 50, 0, 0, 0, 0, 0, 0, 0, 0)', (chat_id,))
+        cursor.execute('INSERT INTO aws_image_settings VALUES (?, 50, 0, 0, 0, 0, 0, 0, 0, 0, "blur")', (chat_id,))
     conn.commit()
+
+
+def is_admin(bot, chat_id, user_id):
+    admins = bot.get_chat_administrators(chat_id)
+    for admin in admins:
+        if admin.user.id == user_id:
+            return True
+    return False
 
 
 def update_confidence_level(chat_id, confidence_level):
@@ -175,6 +185,15 @@ def update_revealing_clothes(chat_id, revealing_clothes):
     conn.close()
 
 
+def update_nsfw_image_action(chat_id, action):
+    conn = sqlite3.connect('user_settings.db')
+    cursor = conn.cursor()
+    cursor.execute('UPDATE aws_image_settings SET nsfw_image_action = ? WHERE chat_id = ?',
+                   (action, chat_id))
+    conn.commit()
+    conn.close()
+
+
 def user_settings_to_telegram_text(settings):
     rez = ''
     for k, v in settings.items():
@@ -198,6 +217,7 @@ def get_user_settings(chat_id):
     settings['Allow female suit'] = bool(rez[7])
     settings['Allow male suit'] = bool(rez[8])
     settings['Allow revealing clothes'] = bool(rez[9])
+    settings['Action for NSFW content'] = rez[10]
     return settings
 
 
@@ -239,11 +259,9 @@ def help(bot, update):
                                                           ' /allowpartialactivity [value] - True for allowing partialactivity, False otherwise\n'
                                                           ' /allowfemalesuit [value] - True for allowing female swimsuits, False otherwise\n'
                                                           ' /allowmalesuit [value] - True for allowing male suits, False otherwise\n'
-                                                          ' /allowrevealingclothes [value] - True for allowing revealing clothes, False otherwise\n', parse_mode=telegram.ParseMode.MARKDOWN)
-
-
-def pidor(bot, update):
-    bot.send_message(chat_id=update.message.chat_id, text='@Stepan_Ustinov')
+                                                          ' /allowrevealingclothes [value] - True for allowing revealing clothes, False otherwise\n'
+                                                          ' /setimageaction value - Possible values: skip, blur, delete',
+                     parse_mode=telegram.ParseMode.MARKDOWN)
 
 
 def settings(bot, update):
@@ -253,6 +271,10 @@ def settings(bot, update):
 
 
 def set_confidence(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -272,6 +294,10 @@ def set_confidence(bot, update, args):
 
 
 def allow_nudity(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -288,6 +314,10 @@ def allow_nudity(bot, update, args):
 
 
 def allow_female_nudity(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -304,6 +334,10 @@ def allow_female_nudity(bot, update, args):
 
 
 def allow_male_nudity(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -320,6 +354,10 @@ def allow_male_nudity(bot, update, args):
 
 
 def allow_sexual_activity(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -336,6 +374,10 @@ def allow_sexual_activity(bot, update, args):
 
 
 def allow_partial_activity(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -352,6 +394,10 @@ def allow_partial_activity(bot, update, args):
 
 
 def allow_female_suit(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -368,6 +414,10 @@ def allow_female_suit(bot, update, args):
 
 
 def allow_male_suit(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -384,6 +434,10 @@ def allow_male_suit(bot, update, args):
 
 
 def allow_revealing_clothes(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
     if len(args) == 0:
         bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
                                                               'again')
@@ -399,16 +453,37 @@ def allow_revealing_clothes(bot, update, args):
     bot.send_message(chat_id=update.message.chat_id, text='Revealing clothes updated')
 
 
-def blur(file, x1=0, y1=0, x2=1, y2=1):
+def set_image_action(bot, update, args):
+    if update.effective_chat.type == 'group':
+        if not is_admin(bot, update.message.chat_id, update.message.from_user.id):
+            bot.send_message(chat_id=update.message.chat_id, text='You are not group admin to change settings')
+            return
+    if len(args) == 0:
+        bot.send_message(chat_id=update.message.chat_id, text='You haven\'t provided any value, refer to /help and try '
+                                                              'again')
+        return
+    if len(args) > 1:
+        bot.send_message(chat_id=update.message.chat_id, text='You have provided too much arguments (>1)')
+        return
+    if args[0] not in ['blur', 'delete', 'skip']:
+        bot.send_message(chat_id=update.message.chat_id, text='Unknown parameter value, refer to /help and try '
+                                                              'again')
+        return
+    update_nsfw_image_action(update.message.chat_id, args[0])
+    bot.send_message(chat_id=update.message.chat_id, text='Action for nsfw images updated')
 
+
+def blur(file, x1=0, y1=0, x2=1, y2=1):
 
     image = Image.open(BytesIO(file))
     positions = (int(image.width * x1), int(image.height * y1), int(image.width * x2), int(image.height * y2))
 
     # blur parts of the image
     image_crop_part = image.crop(positions)
-    for i in range(15):  # You can blur many times
-        image_crop_part = image_crop_part.filter(ImageFilter.BLUR)
+
+    image_crop_part = image_crop_part.filter(ImageFilter.GaussianBlur(40))
+
+
     image.paste(image_crop_part, positions)
 
     with BytesIO() as output:
@@ -419,10 +494,14 @@ def blur(file, x1=0, y1=0, x2=1, y2=1):
 
 
 def check_sticker(bot, update):
-    bot.send_message(chat_id=update.message.chat_id, text='Processing your sticker...')
-    if (update.message.sticker.set_name == 'Methodisty'):
-        bot.send_message(chat_id=update.message.chat_id, text='Pidor')
+    conn = sqlite3.connect('user_settings.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT nsfw_image_action FROM aws_image_settings WHERE chat_id = ?', (update.message.chat_id,))
+    nsfw_image_action = cursor.fetchone()[0]
+
+    if nsfw_image_action == 'skip':
         return 0
+
     file_id = update.message.sticker.file_id
     file = bot.getFile(file_id).download_as_bytearray()
     image = Image.open(BytesIO(file))
@@ -435,29 +514,30 @@ def check_sticker(bot, update):
     explicit_text, file = detect_explicit_text(file)
     is_explicit = explicit_content or explicit_text
     if is_explicit:
-        image = Image.open(BytesIO(file))
-        image.save("image.png")
-        bot.send_sticker(chat_id=update.message.chat_id, sticker=open('image.png', 'rb'))
-        bot.send_message(chat_id=update.message.chat_id, text="@" + update.message.from_user['username'])
-        bot.send_message(chat_id=update.message.chat_id, text='HOLY SHEAT THAT SOME NSFW STICKER!')
+        if nsfw_image_action == 'blur':
+            image = Image.open(BytesIO(file))
+            image.save("image.png")
+            bot.send_sticker(chat_id=update.message.chat_id, sticker=open('image.png', 'rb'))
+            bot.send_message(chat_id=update.message.chat_id, text="@" + update.message.from_user['username'])
         bot.delete_message(update.message.chat.id, update.message.message_id)
-    else:
-        bot.send_message(chat_id=update.message.chat_id, text='All is fine :)')
 
 
 def check_photo(bot, update):
+    conn = sqlite3.connect('user_settings.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT nsfw_image_action FROM aws_image_settings WHERE chat_id = ?', (update.message.chat_id,))
+    nsfw_image_action = cursor.fetchone()[0]
 
-    bot.send_message(chat_id=update.message.chat_id, text='Processing your image...')
+    if nsfw_image_action == 'skip':
+        return 0
+
     file_id = update.message.photo[-1].file_id
     file = bot.getFile(file_id).download_as_bytearray()
-
-
 
     explicit_content, file = detect_explicit_content(update.message.chat_id, file)
     explicit_text, file = detect_explicit_text(file)
 
     is_explicit = explicit_content or explicit_text
-
 
     if is_explicit:
         image = Image.open(BytesIO(file))
@@ -466,12 +546,10 @@ def check_photo(bot, update):
             text = ""
         else:
             text = update.message.caption
-        bot.send_photo(chat_id=update.message.chat_id, photo=open('image.png', 'rb'),
-                       caption=text + "\n@" + update.message.from_user['username'])
-        bot.send_message(chat_id=update.message.chat_id, text='HOLY SHEAT THAT SOME NSFW IMAGE!')
+        if nsfw_image_action == 'blur':
+            bot.send_photo(chat_id=update.message.chat_id, photo=open('image.png', 'rb'),
+                           caption=text + "\n@" + update.message.from_user['username'])
         bot.delete_message(update.message.chat.id, update.message.message_id)
-    else:
-        bot.send_message(chat_id=update.message.chat_id, text='All is fine :)')
 
 
 def detect_explicit_content(chat_id, image_bytes):
@@ -510,7 +588,6 @@ def detect_explicit_content(chat_id, image_bytes):
     except Exception as e:
         raise e
     labels = response['ModerationLabels']
-
     for label in labels:
         name = label['Name']
         if name == 'Suggestive' or name == 'Explicit Nudity':
@@ -563,9 +640,9 @@ dispatcher.add_handler(CommandHandler('allowpartialactivity', allow_partial_acti
 dispatcher.add_handler(CommandHandler('allowfemalesuit', allow_female_suit, pass_args=True))
 dispatcher.add_handler(CommandHandler('allowmalesuit', allow_male_suit, pass_args=True))
 dispatcher.add_handler(CommandHandler('allowrevealingclothes', allow_revealing_clothes, pass_args=True))
+dispatcher.add_handler(CommandHandler('setimageaction', set_image_action, pass_args=True))
 dispatcher.add_handler(CommandHandler('help', help))
-dispatcher.add_handler(CommandHandler('pidor', pidor))
 dispatcher.add_handler(CommandHandler('settings', settings))
 dispatcher.add_handler(MessageHandler(Filters.photo, check_photo))
 dispatcher.add_handler(MessageHandler(Filters.sticker, check_sticker))
-updater.start_polling()
+updater.start_polling(timeout=60)
