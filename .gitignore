@@ -6,5 +6,7 @@ __pycache__/
 venv/
 # Ignore bot settings
 /bot_settings.ini
+# Ignore log
+/log.txt
 # Ignore image
 /image.png
